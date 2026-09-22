@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlacarAPS — Monitoramento de Famílias · SUS Rio</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        rio: {
+                            blue: '#00529B',
+                            dark: '#003366',
+                            light: '#0072CE',
+                            accent: '#FFC72C',
+                            sky: '#E6F0FA'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #1e293b;
+        }
+
+        .leaflet-container {
+            z-index: 10;
+            border-radius: 0.75rem;
+        }
+
+        /* Print styles to format like the physical wall poster */
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; font-size: 11px !important; }
+            .print-container { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
+            .print-card { break-inside: avoid; border: 1px solid #cbd5e1 !important; box-shadow: none !important; }
+            .print-header { background: #00529B !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .print-bg-light { background: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .print-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 1rem !important; }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-full flex flex-col min-h-screen text-slate-800 antialiased">
+
+    <header class="bg-rio-dark text-white shadow-lg sticky top-0 z-40 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+            <!-- Branding -->
+            <div class="flex items-center space-x-3">
+                <div class="bg-white p-2 rounded-lg text-rio-dark flex items-center justify-center font-black tracking-wider text-xl shadow-sm">
+                    <i data-lucide="activity" class="w-6 h-6 text-rio-blue mr-1"></i>
+                    <span>RIO</span>
+                </div>
+                <div>
+                    <h1 class="font-black text-xl tracking-tight flex items-center gap-2">
+                        <span>PlacarAPS</span>
+                        <span class="text-[10px] font-extrabold uppercase bg-sky-500/30 text-sky-200 px-2 py-0.5 rounded border border-sky-400/30">Digital</span>
+                    </h1>
+                    <p class="text-xs text-blue-200">Monitoramento de Famílias · Atenção Primária à Saúde / SUS Rio</p>
+                </div>
+            </div>
+
+            <!-- Global Action Toolbar -->
+            <div class="flex items-center flex-wrap gap-2">
+                <button onclick="loadSampleData()" class="px-3 py-1.5 text-xs font-semibold bg-sky-700/60 hover:bg-sky-600 rounded-lg text-white flex items-center gap-1.5 transition">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span>Dados Exemplo</span>
+                </button>
+                <button onclick="exportJSON()" class="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white flex items-center gap-1.5 transition">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span>Exportar</span>
+                </button>
+                <button onclick="document.getElementById('importFileInput').click()" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-500 rounded-lg text-white flex items-center gap-1.5 transition">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    <span>Importar</span>
+                </button>
+                <input type="file" id="importFileInput" class="hidden" accept=".json" onchange="importJSON(event)">
+                <button onclick="confirmReset()" class="px-3 py-1.5 text-xs font-semibold bg-rose-600/80 hover:bg-rose-600 rounded-lg text-white flex items-center gap-1.5 transition">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    <span>Limpar</span>
+                </button>
+                <button onclick="window.print()" class="px-3.5 py-1.5 text-xs font-bold bg-white text-rio-dark hover:bg-blue-50 rounded-lg flex items-center gap-1.5 shadow transition">
+                    <i data-lucide="printer" class="w-4 h-4 text-rio-blue"></i>
+                    <span>Imprimir Placar</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hidden File Input for Photo Upload -->
+    <input type="file" id="photoFileInput" class="hidden" accept="image/*">
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 print-container">
+
+        <!-- Top Header Info & Official Banner -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 print-card">
+            <div class="flex flex-col md:flex-row items-center justify-between border-b border-slate-100 pb-4 mb-5 gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-rio-blue rounded-xl flex items-center justify-center text-white shadow-md">
+                        <i data-lucide="clipboard-list" class="w-7 h-7"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-black text-slate-800 tracking-tight">Placar de Monitoramento de Famílias</h2>
+                        <p class="text-xs text-slate-500">Acompanhamento Epidemiológico Continuado pelas Equipes de Saúde da Família (eSF)</p>
+                    </div>
+                </div>
+
+                <!-- Unit & Team Name Inputs -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto">
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">Nome da Unidade (CF/CMS)</label>
+                        <input type="text" id="unitName" onchange="updateHeaderField('unitName', this.value)" placeholder="Ex: CF Zilda Arns" class="w-full bg-white text-sm font-bold text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 focus:outline-none focus:border-rio-blue">
+                    </div>
+                    <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                        <label class="block text-[10px] font-bold uppercase text-slate-400 mb-0.5">Nome da Equipe</label>
+                        <input type="text" id="teamName" onchange="updateHeaderField('teamName', this.value)" placeholder="Ex: Equipe Carioca 1" class="w-full bg-white text-sm font-bold text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 focus:outline-none focus:border-rio-blue">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Health Professionals Team Header (Dynamic Doctors, Nurses, Techs) -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <i data-lucide="users" class="w-4 h-4 text-rio-blue"></i>
+                        <span>Corpo Técnico da Equipe</span>
+                    </h3>
+                    <button onclick="openAddMemberModal()" class="no-print text-xs text-rio-blue font-bold hover:underline flex items-center gap-1">
+                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                        <span>+ Adicionar Profissional</span>
+                    </button>
+                </div>
+
+                <!-- Dynamic Team Cards Container -->
+                <div id="teamMembersContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    <!-- Dynamic Team Member Cards Rendered by JS -->
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 no-print">
+            <!-- View Selector Tabs -->
+            <div class="bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 w-full sm:w-auto overflow-x-auto">
+                <button id="tab-grid" onclick="switchView('grid')" class="px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-white text-rio-blue shadow-sm">
+                    <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                    <span>Grid Completo</span>
+                </button>
+                <button id="tab-focused" onclick="switchView('focused')" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <i data-lucide="focus" class="w-4 h-4"></i>
+                    <span>Visão Focada</span>
+                </button>
+                <button id="tab-table" onclick="switchView('table')" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <i data-lucide="table" class="w-4 h-4"></i>
+                    <span>Tabela Comparativa</span>
+                </button>
+                <button id="tab-map" onclick="switchView('map')" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-emerald-600"></i>
+                    <span>Mapa do Território</span>
+                </button>
+            </div>
+
+            <!-- Add/Remove ACS Controls -->
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-500 font-medium">Microáreas (ACS):</span>
+                <span id="acsCountBadge" class="bg-blue-100 text-rio-blue text-xs font-bold px-2 py-0.5 rounded-full">6</span>
+                <button onclick="addACS()" class="p-1.5 bg-rio-blue text-white hover:bg-rio-dark rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm" title="Adicionar Microárea / ACS">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Adicionar ACS</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-gradient-to-r from-rio-dark to-rio-blue rounded-2xl shadow-md text-white p-5">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <span class="text-[10px] font-black uppercase tracking-widest text-sky-300">Consolidado Geral da Equipe</span>
+                    <h3 class="text-2xl font-black">Indicadores Epidemiológicos da Área</h3>
+                    <p class="text-xs text-blue-100 mt-0.5">Soma automatizada de todas as microáreas sob responsabilidade da equipe</p>
+                </div>
+                <div class="flex items-center gap-4 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
+                    <div class="text-center px-2">
+                        <span class="block text-2xl font-black" id="totalTeamFamilies">0</span>
+                        <span class="text-[10px] font-semibold text-blue-200 uppercase">Famílias</span>
+                    </div>
+                    <div class="h-8 w-px bg-white/20"></div>
+                    <div class="text-center px-2">
+                        <span class="block text-2xl font-black" id="totalTeamPeople">0</span>
+                        <span class="text-[10px] font-semibold text-blue-200 uppercase">Pessoas</span>
+                    </div>
+                    <div class="h-8 w-px bg-white/20"></div>
+                    <div class="text-center px-2">
+                        <span class="block text-2xl font-black text-amber-300" id="totalTeamCoverage">0%</span>
+                        <span class="text-[10px] font-semibold text-blue-200 uppercase">Acompanhados</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Indicator Pills -->
+            <div id="teamIndicatorsSummary" class="mt-4 pt-4 border-t border-white/10 grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2 text-center text-xs">
+                <!-- Calculated dynamically by JS -->
+            </div>
+        </div>
+
+        <div id="view-grid" class="space-y-6">
+            <div id="acsGridContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 print-grid">
+                <!-- Dynamic ACS Cards rendered by JS -->
+            </div>
+        </div>
+
+        <div id="view-focused" class="hidden space-y-4">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between gap-4">
+                <span class="text-xs font-bold text-slate-500 uppercase">Selecione o ACS para edição focada:</span>
+                <select id="focusedACSSelect" onchange="selectACSFocussed(this.value)" class="bg-slate-50 border border-slate-300 font-bold text-slate-800 text-sm rounded-lg p-2 focus:ring-rio-blue">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+            <div id="focusedACSContainer">
+                <!-- Single ACS Card rendered here -->
+            </div>
+        </div>
+
+        <div id="view-table" class="hidden">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-black text-slate-800 text-base">Matriz Comparativa de Acompanhamento</h3>
+                        <p class="text-xs text-slate-500">Visualização lado a lado de todas as microáreas para identificação de lacunas de cobertura</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead id="comparativeTableHead" class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <!-- Rendered by JS -->
+                        </thead>
+                        <tbody id="comparativeTableBody" class="divide-y divide-slate-200 text-slate-800">
+                            <!-- Rendered by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-map" class="hidden space-y-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Map Left Controls & Address List -->
+                <div class="lg:col-span-1 space-y-4">
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        <h3 class="font-black text-slate-800 text-sm flex items-center gap-2">
+                            <i data-lucide="map-pin" class="w-4 h-4 text-rio-blue"></i>
+                            <span>Seleção de Microárea / ACS</span>
+                        </h3>
+                        
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Selecione o ACS</label>
+                            <select id="mapACSSelect" onchange="onMapACSSelect(this.value)" class="w-full bg-slate-50 border border-slate-300 font-bold text-slate-800 text-sm rounded-lg p-2.5 focus:border-rio-blue">
+                                <!-- Populated by JS -->
+                            </select>
+                        </div>
+
+                        <!-- Address Search Input (Photon OSM Geocoder) -->
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Buscar Logradouro no Rio</label>
+                            <div class="flex gap-1.5">
+                                <input type="text" id="addressSearchInput" placeholder="Ex: Rua Barão da Torre, Ipanema" class="flex-grow bg-slate-50 border border-slate-300 text-xs font-medium rounded-lg px-2.5 py-2 focus:outline-none focus:border-rio-blue">
+                                <button onclick="searchAddress()" class="px-3 py-2 bg-rio-blue text-white rounded-lg hover:bg-rio-dark transition text-xs font-bold">
+                                    <i data-lucide="search" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Jump to Rio Neighborhood Dropdown -->
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ir para Bairro no Rio de Janeiro</label>
+                            <select onchange="jumpToRioNeighborhood(this.value)" class="w-full bg-slate-50 border border-slate-300 text-xs font-bold text-slate-700 rounded-lg p-2">
+                                <option value="">Selecione um bairro...</option>
+                                <option value="-22.9519,-43.1857">Botafogo</option>
+                                <option value="-22.9711,-43.1825">Copacabana</option>
+                                <option value="-22.9838,-43.2045">Ipanema / Leblon</option>
+                                <option value="-22.9247,-43.2326">Tijuca / Maracanã</option>
+                                <option value="-22.9068,-43.1729">Centro / Lapa</option>
+                                <option value="-22.8833,-43.2917">Méier / Zona Norte</option>
+                                <option value="-22.8753,-43.4659">Bangu / Realengo</option>
+                                <option value="-22.9008,-43.5583">Campo Grande</option>
+                                <option value="-22.9912,-43.3615">Barra da Tijuca</option>
+                                <option value="-22.9881,-43.2478">Rocinha / São Conrado</option>
+                                <option value="-22.8083,-43.3852">Pavuna / Madureira</option>
+                            </select>
+                        </div>
+
+                        <!-- Add Manual Address to Selected ACS -->
+                        <div id="acsAddressManagement" class="pt-3 border-t border-slate-100 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-xs font-bold text-slate-700 uppercase">Endereços da Microárea</h4>
+                                <button onclick="addAddressToACS()" class="text-[11px] text-rio-blue font-bold hover:underline flex items-center gap-1">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                    <span>Adicionar Rua</span>
+                                </button>
+                            </div>
+                            <div id="acsAddressList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                <!-- List of streets/addresses rendered by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Leaflet Interactive Map -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                        <div class="flex items-center justify-between px-1">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span id="mapStatusText" class="text-xs font-bold text-slate-700">Clique no mapa para definir o ponto central da microárea</span>
+                            </div>
+                            <button onclick="locateUser()" class="text-xs font-bold text-rio-blue hover:underline flex items-center gap-1">
+                                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+                                <span>Minha Posição</span>
+                            </button>
+                        </div>
+                        <div id="leafletMap" class="w-full h-[520px] rounded-xl bg-slate-100 border border-slate-200"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 mt-12 py-4 text-center text-xs text-slate-500 no-print">
+        <p><strong>PlacarAPS</strong> — Sistema Digital de Monitoramento de Famílias (Atenção Primária à Saúde / SUS Rio)</p>
+        <p class="mt-1 text-slate-400">Desenvolvido para agilidade no preenchimento, georreferenciamento e consolidação dos indicadores de saúde.</p>
+    </footer>
+
+    <div id="customModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center hidden p-4 no-print">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-100">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 id="modalTitle" class="font-black text-slate-800 text-base">Título do Modal</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div id="modalBody" class="text-xs text-slate-600 space-y-3">
+                <!-- Modal content injected dynamically -->
+            </div>
+            <div id="modalFooter" class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <!-- Buttons injected dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none no-print"></div>
+
+    <script>
+        const CONDITIONS = [
+            { id: 'cria1', name: 'Criança menor de 1 ano' },
+            { id: 'cria5', name: 'Criança de 1 a 5 anos' },
+            { id: 'gestante', name: 'Gestante' },
+            { id: 'gestanteAR', name: 'Gestante Alto Risco' },
+            { id: 'diabetes', name: 'Diabetes' },
+            { id: 'hipertensao', name: 'Hipertensão' },
+            { id: 'hanseniase', name: 'Hanseníase' },
+            { id: 'tuberculose', name: 'Tuberculose' },
+            { id: 'idoso', name: 'Idoso' },
+            { id: 'acamado', name: 'Acamado' }
+        ];
+
+        const COLOR_PALETTE = [
+            '#00529B', '#D97706', '#059669', '#DC2626', '#7C3AED', 
+            '#DB2777', '#2563EB', '#0891B2', '#4D7C0F', '#B45309'
+        ];
+
+        // Global State Object
+        let state = {
+            unitName: '',
+            teamName: '',
+            teamMembers: [
+                { id: 'm1', role: 'Médico', name: '', photo: null },
+                { id: 'm2', role: 'Enfermeiro', name: '', photo: null },
+                { id: 'm3', role: 'Técnico de Enfermagem 1', name: '', photo: null },
+                { id: 'm4', role: 'Técnico de Enfermagem 2', name: '', photo: null }
+            ],
+            acsList: [],
+            activeView: 'grid',
+            selectedFocusedACSId: null,
+            selectedMapACSId: null
+        };
+
+        // Leaflet Map Variables
+        let leafletMap = null;
+        let mapMarkers = {};
+        let mapCircles = {};
+        let activePhotoTarget = null; // Stores target photo for file upload
+
+        window.addEventListener('load', () => {
+            loadSavedState();
+            if (state.acsList.length === 0) {
+                initDefaultACSList(6);
+            }
+            if (!state.selectedFocusedACSId && state.acsList.length > 0) {
+                state.selectedFocusedACSId = state.acsList[0].id;
+            }
+            if (!state.selectedMapACSId && state.acsList.length > 0) {
+                state.selectedMapACSId = state.acsList[0].id;
+            }
+
+            renderAll();
+            setupPhotoUploadListener();
+            lucide.createIcons();
+        });
+
+        function initDefaultACSList(count = 6) {
+            state.acsList = [];
+            const defaultCoords = [
+                { lat: -22.9519, lng: -43.1857 }, // Botafogo
+                { lat: -22.9540, lng: -43.1830 },
+                { lat: -22.9500, lng: -43.1890 },
+                { lat: -22.9560, lng: -43.1810 },
+                { lat: -22.9480, lng: -43.1840 },
+                { lat: -22.9530, lng: -43.1880 }
+            ];
+
+            for (let i = 1; i <= count; i++) {
+                const coord = defaultCoords[(i - 1) % defaultCoords.length];
+                const acsId = `acs_${Date.now()}_${i}`;
+                const dataObj = {};
+                CONDITIONS.forEach(c => {
+                    dataObj[c.id] = { registered: 0, accompanied: 0 };
+                });
+
+                state.acsList.push({
+                    id: acsId,
+                    name: `ACS Microárea 0${i}`,
+                    microarea: `0${i}`,
+                    year: '2026',
+                    month: 'Janeiro',
+                    totalFamilies: 0,
+                    totalPeople: 0,
+                    territoryDesc: `Ruas e blocos da Microárea 0${i}`,
+                    photo: null,
+                    lat: coord.lat,
+                    lng: coord.lng,
+                    addresses: [`Rua Principal da MA 0${i}`],
+                    data: dataObj
+                });
+            }
+            saveState();
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem('placar_aps_rio_state', JSON.stringify(state));
+            } catch (e) {
+                console.error("Erro ao salvar no localStorage", e);
+            }
+        }
+
+        function loadSavedState() {
+            try {
+                const saved = localStorage.getItem('placar_aps_rio_state');
+                if (saved) {
+                    state = JSON.parse(saved);
+                }
+            } catch (e) {
+                console.error("Erro ao carregar do localStorage", e);
+            }
+        }
+
+        function switchView(viewName) {
+            state.activeView = viewName;
+            ['grid', 'focused', 'table', 'map'].forEach(v => {
+                const viewEl = document.getElementById(`view-${v}`);
+                const tabBtn = document.getElementById(`tab-${v}`);
+                if (v === viewName) {
+                    viewEl.classList.remove('hidden');
+                    tabBtn.className = "px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 bg-white text-rio-blue shadow-sm";
+                } else {
+                    viewEl.classList.add('hidden');
+                    tabBtn.className = "px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-2";
+                }
+            });
+
+            if (viewName === 'map') {
+                setTimeout(() => {
+                    initOrUpdateMap();
+                }, 150);
+            } else if (viewName === 'table') {
+                renderComparativeTable();
+            } else if (viewName === 'focused') {
+                renderFocusedACS();
+            }
+        }
+
+        function renderAll() {
+            document.getElementById('unitName').value = state.unitName || '';
+            document.getElementById('teamName').value = state.teamName || '';
+            document.getElementById('acsCountBadge').innerText = state.acsList.length;
+
+            renderHeaderTeamMembers();
+            renderConsolidatedSummary();
+            renderACSGrid();
+            renderComparativeTable();
+            renderFocusedACS();
+            updateMapACSSelectOptions();
+        }
+
+        function renderHeaderTeamMembers() {
+            const container = document.getElementById('teamMembersContainer');
+            container.innerHTML = '';
+
+            state.teamMembers.forEach((member) => {
+                const card = document.createElement('div');
+                card.className = "bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center relative group hover:border-rio-blue transition";
+                
+                const photoSrc = member.photo || `https://placehold.co/100x120/e2e8f0/475569?text=${encodeURIComponent(member.role)}`;
+                
+                card.innerHTML = `
+                    <button onclick="removeTeamMember('${member.id}')" class="no-print absolute top-1 right-1 text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition p-1" title="Remover profissional">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <div onclick="triggerPhotoUpload('member', '${member.id}')" class="w-16 h-20 mx-auto mb-2 bg-white rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer overflow-hidden hover:border-rio-blue transition group-hover:shadow-xs relative">
+                        <img src="${photoSrc}" class="w-full h-full object-cover" alt="Foto ${member.role}">
+                        <div class="absolute inset-0 bg-slate-900/40 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition text-[9px] font-bold">
+                            <i data-lucide="camera" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <span class="block text-[10px] font-black uppercase text-rio-blue tracking-tight">${escapeHtml(member.role)}</span>
+                    <input type="text" value="${escapeHtml(member.name || '')}" onchange="updateTeamMemberName('${member.id}', this.value)" placeholder="Nome..." class="w-full text-xs font-bold text-slate-800 text-center bg-transparent border-b border-slate-300 focus:border-rio-blue focus:outline-none mt-1 pb-0.5">
+                `;
+                container.appendChild(card);
+            });
+
+            lucide.createIcons();
+        }
+
+        function updateHeaderField(field, val) {
+            state[field] = val;
+            saveState();
+        }
+
+        function updateTeamMemberName(id, val) {
+            const member = state.teamMembers.find(m => m.id === id);
+            if (member) {
+                member.name = val;
+                saveState();
+            }
+        }
+
+        function removeTeamMember(id) {
+            if (state.teamMembers.length <= 1) {
+                showToast("É necessário manter pelo menos um integrante na equipe.", "warning");
+                return;
+            }
+            state.teamMembers = state.teamMembers.filter(m => m.id !== id);
+            saveState();
+            renderHeaderTeamMembers();
+            showToast("Profissional removido.", "info");
+        }
+
+        function openAddMemberModal() {
+            showModal(
+                "Adicionar Profissional de Saúde",
+                `
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Função / Cargo</label>
+                    <select id="newMemberRole" class="w-full border border-slate-300 rounded-lg p-2 text-xs font-bold">
+                        <option value="Médico(a)">Médico(a)</option>
+                        <option value="Enfermeiro(a)">Enfermeiro(a)</option>
+                        <option value="Técnico de Enfermagem">Técnico de Enfermagem</option>
+                        <option value="Residente de Medicina">Residente de Medicina</option>
+                        <option value="Residente de Enfermagem">Residente de Enfermagem</option>
+                        <option value="Dentista">Dentista / ASB</option>
+                    </select>
+                </div>
+                <div class="mt-3">
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Nome do Profissional</label>
+                    <input type="text" id="newMemberName" placeholder="Ex: Dra. Ana Silva" class="w-full border border-slate-300 rounded-lg p-2 text-xs font-medium">
+                </div>
+                `,
+                [
+                    { label: "Cancelar", type: "secondary", action: closeModal },
+                    { label: "Adicionar", type: "primary", action: confirmAddMember }
+                ]
+            );
+        }
+
+        function confirmAddMember() {
+            const role = document.getElementById('newMemberRole').value;
+            const name = document.getElementById('newMemberName').value.trim();
+            state.teamMembers.push({
+                id: `m_${Date.now()}`,
+                role: role,
+                name: name,
+                photo: null
+            });
+            saveState();
+            renderHeaderTeamMembers();
+            closeModal();
+            showToast("Profissional adicionado!", "success");
+        }
+
+        function renderConsolidatedSummary() {
+            let grandTotalFamilies = 0;
+            let grandTotalPeople = 0;
+            let grandTotalRegistered = 0;
+            let grandTotalAccompanied = 0;
+
+            const condTotals = {};
+            CONDITIONS.forEach(c => {
+                condTotals[c.id] = { reg: 0, acc: 0 };
+            });
+
+            state.acsList.forEach(acs => {
+                grandTotalFamilies += (parseInt(acs.totalFamilies) || 0);
+                grandTotalPeople += (parseInt(acs.totalPeople) || 0);
+
+                CONDITIONS.forEach(c => {
+                    const reg = parseInt(acs.data[c.id]?.registered) || 0;
+                    const acc = parseInt(acs.data[c.id]?.accompanied) || 0;
+                    condTotals[c.id].reg += reg;
+                    condTotals[c.id].acc += acc;
+                    grandTotalRegistered += reg;
+                    grandTotalAccompanied += acc;
+                });
+            });
+
+            const overallCoverage = grandTotalRegistered > 0 
+                ? Math.round((grandTotalAccompanied / grandTotalRegistered) * 100) 
+                : 0;
+
+            document.getElementById('totalTeamFamilies').innerText = grandTotalFamilies.toLocaleString('pt-BR');
+            document.getElementById('totalTeamPeople').innerText = grandTotalPeople.toLocaleString('pt-BR');
+            document.getElementById('totalTeamCoverage').innerText = `${overallCoverage}%`;
+
+            const summaryContainer = document.getElementById('teamIndicatorsSummary');
+            summaryContainer.innerHTML = '';
+
+            CONDITIONS.forEach(c => {
+                const reg = condTotals[c.id].reg;
+                const acc = condTotals[c.id].acc;
+                const pct = reg > 0 ? Math.round((acc / reg) * 100) : 0;
+                
+                let badgeColor = 'text-emerald-300';
+                if (pct < 70) badgeColor = 'text-rose-300';
+                else if (pct < 85) badgeColor = 'text-amber-300';
+
+                const pill = document.createElement('div');
+                pill.className = "bg-white/10 rounded-lg p-1.5 border border-white/10";
+                pill.innerHTML = `
+                    <span class="block text-[9px] font-bold text-sky-200 truncate" title="${c.name}">${c.name}</span>
+                    <span class="block text-sm font-black ${badgeColor}">${pct}%</span>
+                    <span class="text-[9px] text-blue-100">${acc}/${reg}</span>
+                `;
+                summaryContainer.appendChild(pill);
+            });
+        }
+
+        function renderACSGrid() {
+            const container = document.getElementById('acsGridContainer');
+            container.innerHTML = '';
+
+            state.acsList.forEach((acs, index) => {
+                const cardColor = COLOR_PALETTE[index % COLOR_PALETTE.length];
+                const card = document.createElement('div');
+                card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col print-card";
+                
+                const photoSrc = acs.photo || `https://placehold.co/100x120/f1f5f9/475569?text=ACS`;
+
+                // Calculate ACS internal totals
+                let totalReg = 0;
+                let totalAcc = 0;
+                CONDITIONS.forEach(c => {
+                    totalReg += parseInt(acs.data[c.id]?.registered) || 0;
+                    totalAcc += parseInt(acs.data[c.id]?.accompanied) || 0;
+                });
+                const acsPct = totalReg > 0 ? Math.round((totalAcc / totalReg) * 100) : 0;
+
+                let tableRows = '';
+                CONDITIONS.forEach(c => {
+                    const reg = acs.data[c.id]?.registered || 0;
+                    const acc = acs.data[c.id]?.accompanied || 0;
+                    const pct = reg > 0 ? Math.round((acc / reg) * 100) : 0;
+
+                    let bgClass = '';
+                    if (reg > 0 && pct < 70) bgClass = 'bg-rose-50/50';
+
+                    tableRows += `
+                        <tr class="border-b border-slate-100 ${bgClass}">
+                            <td class="py-1.5 px-2.5 font-medium text-slate-700 text-xs">${c.name}</td>
+                            <td class="py-1 px-1 text-center w-20">
+                                <input type="number" min="0" value="${reg}" onchange="updateACSVal('${acs.id}', '${c.id}', 'registered', this.value)" class="w-full text-center bg-slate-50 border border-slate-200 rounded font-bold text-xs py-0.5 focus:border-rio-blue">
+                            </td>
+                            <td class="py-1 px-1 text-center w-20">
+                                <input type="number" min="0" value="${acc}" onchange="updateACSVal('${acs.id}', '${c.id}', 'accompanied', this.value)" class="w-full text-center bg-slate-50 border border-slate-200 rounded font-bold text-xs py-0.5 focus:border-rio-blue">
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <!-- Card Top Header -->
+                    <div class="p-3.5 text-white flex items-center justify-between" style="background-color: ${cardColor};">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-md">MA ${escapeHtml(acs.microarea)}</span>
+                            <h3 class="font-bold text-sm tracking-tight truncate max-w-[150px]">${escapeHtml(acs.name)}</h3>
+                        </div>
+                        <div class="flex items-center gap-1 no-print">
+                            <button onclick="focusACSOnMap('${acs.id}')" class="p-1 bg-white/20 hover:bg-white/30 rounded text-xs font-bold transition flex items-center gap-1" title="Ver no Mapa">
+                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="removeACS('${acs.id}')" class="p-1 bg-white/20 hover:bg-rose-600 rounded transition" title="Excluir ACS">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ACS Info Box & Photo Frame -->
+                    <div class="p-3 bg-slate-50/80 border-b border-slate-200 grid grid-cols-3 gap-2 items-center">
+                        <!-- Photo Frame -->
+                        <div onclick="triggerPhotoUpload('acs', '${acs.id}')" class="col-span-1 h-24 bg-white rounded-lg border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer overflow-hidden hover:border-rio-blue transition group relative shadow-xs">
+                            <img src="${photoSrc}" class="w-full h-full object-cover" alt="Foto ACS">
+                            <div class="absolute inset-0 bg-slate-900/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-[9px] font-bold">
+                                <i data-lucide="camera" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+
+                        <!-- ACS Text Fields -->
+                        <div class="col-span-2 space-y-1.5 text-xs">
+                            <div>
+                                <label class="block text-[9px] font-bold text-slate-400 uppercase">Nome do Agente (ACS)</label>
+                                <input type="text" value="${escapeHtml(acs.name)}" onchange="updateACSField('${acs.id}', 'name', this.value)" class="w-full bg-white border border-slate-200 rounded px-2 py-0.5 font-bold text-slate-800">
+                            </div>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-slate-400 uppercase">Famílias</label>
+                                    <input type="number" min="0" value="${acs.totalFamilies}" onchange="updateACSField('${acs.id}', 'totalFamilies', this.value)" class="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 font-bold text-slate-800 text-center">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-slate-400 uppercase">Pessoas</label>
+                                    <input type="number" min="0" value="${acs.totalPeople}" onchange="updateACSField('${acs.id}', 'totalPeople', this.value)" class="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 font-bold text-slate-800 text-center">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Territory Description -->
+                    <div class="px-3 py-1.5 bg-slate-100 border-b border-slate-200 text-[10px]">
+                        <input type="text" value="${escapeHtml(acs.territoryDesc || '')}" onchange="updateACSField('${acs.id}', 'territoryDesc', this.value)" placeholder="Descrição da Microárea (Ruas, Quadras)..." class="w-full bg-transparent font-medium text-slate-600 focus:outline-none focus:text-slate-900">
+                    </div>
+
+                    <!-- Indicators Table -->
+                    <div class="flex-grow overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-100 text-[10px] font-black text-slate-500 uppercase border-b border-slate-200">
+                                <tr>
+                                    <th class="py-1 px-2.5">Condição</th>
+                                    <th class="py-1 px-1 text-center">Cadast.</th>
+                                    <th class="py-1 px-1 text-center">Acomp.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Card Footer Summary -->
+                    <div class="p-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs font-bold">
+                        <span class="text-slate-500">Acompanhamento da MA:</span>
+                        <span class="px-2 py-0.5 rounded-full text-white text-xs font-black" style="background-color: ${cardColor};">
+                            ${acsPct}% (${totalAcc}/${totalReg})
+                        </span>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+
+            lucide.createIcons();
+        }
+
+        function updateACSField(acsId, field, val) {
+            const acs = state.acsList.find(a => a.id === acsId);
+            if (acs) {
+                acs[field] = val;
+                saveState();
+                renderConsolidatedSummary();
+            }
+        }
+
+        function updateACSVal(acsId, condId, type, val) {
+            const acs = state.acsList.find(a => a.id === acsId);
+            if (acs) {
+                if (!acs.data[condId]) acs.data[condId] = { registered: 0, accompanied: 0 };
+                acs.data[condId][type] = parseInt(val) || 0;
+                saveState();
+                renderConsolidatedSummary();
+            }
+        }
+
+        function addACS() {
+            const newIndex = state.acsList.length + 1;
+            const acsId = `acs_${Date.now()}`;
+            const dataObj = {};
+            CONDITIONS.forEach(c => {
+                dataObj[c.id] = { registered: 0, accompanied: 0 };
+            });
+
+            state.acsList.push({
+                id: acsId,
+                name: `ACS Microárea 0${newIndex}`,
+                microarea: `0${newIndex}`,
+                year: '2026',
+                month: 'Janeiro',
+                totalFamilies: 0,
+                totalPeople: 0,
+                territoryDesc: `Descrição da Microárea 0${newIndex}`,
+                photo: null,
+                lat: -22.9519 + (Math.random() - 0.5) * 0.02,
+                lng: -43.1857 + (Math.random() - 0.5) * 0.02,
+                addresses: [],
+                data: dataObj
+            });
+
+            saveState();
+            renderAll();
+            showToast("Nova microárea adicionada!", "success");
+        }
+
+        function removeACS(acsId) {
+            if (state.acsList.length <= 1) {
+                showToast("É necessário manter pelo menos uma microárea.", "warning");
+                return;
+            }
+            showModal(
+                "Remover Microárea",
+                "Tem certeza que deseja remover este ACS e todos os seus dados?",
+                [
+                    { label: "Cancelar", type: "secondary", action: closeModal },
+                    { 
+                        label: "Remover", 
+                        type: "danger", 
+                        action: () => {
+                            state.acsList = state.acsList.filter(a => a.id !== acsId);
+                            saveState();
+                            renderAll();
+                            closeModal();
+                            showToast("Microárea removida.", "info");
+                        } 
+                    }
+                ]
+            );
+        }
+
+        function renderFocusedACS() {
+            const selectEl = document.getElementById('focusedACSSelect');
+            selectEl.innerHTML = '';
+
+            state.acsList.forEach(acs => {
+                const opt = document.createElement('option');
+                opt.value = acs.id;
+                opt.innerText = `MA ${acs.microarea} - ${acs.name}`;
+                if (acs.id === state.selectedFocusedACSId) opt.selected = true;
+                selectEl.appendChild(opt);
+            });
+
+            const container = document.getElementById('focusedACSContainer');
+            container.innerHTML = '';
+
+            const activeACS = state.acsList.find(a => a.id === state.selectedFocusedACSId) || state.acsList[0];
+            if (!activeACS) return;
+
+            // Render single card with full size
+            const wrapper = document.createElement('div');
+            wrapper.className = "max-w-2xl mx-auto";
+            
+            // Generate standard card content inside wrapper
+            wrapper.innerHTML = `<div id="focusedCardTarget"></div>`;
+            container.appendChild(wrapper);
+
+            // Re-render single card inside focusedCardTarget
+            const target = document.getElementById('focusedCardTarget');
+            const singleCardGrid = document.createElement('div');
+            singleCardGrid.id = 'acsGridContainer'; // Reuse grid rendering
+            target.appendChild(singleCardGrid);
+
+            // Temporary render active ACS only
+            const originalList = state.acsList;
+            state.acsList = [activeACS];
+            renderACSGrid();
+            state.acsList = originalList;
+        }
+
+        function selectACSFocussed(acsId) {
+            state.selectedFocusedACSId = acsId;
+            renderFocusedACS();
+        }
+
+        function renderComparativeTable() {
+            const thead = document.getElementById('comparativeTableHead');
+            const tbody = document.getElementById('comparativeTableBody');
+
+            let headerHTML = `
+                <tr>
+                    <th class="py-2.5 px-3">Condição Epidemiológica</th>
+            `;
+            state.acsList.forEach(acs => {
+                headerHTML += `<th class="py-2.5 px-3 text-center border-l border-slate-200">MA ${escapeHtml(acs.microarea)}<br><span class="text-[10px] font-normal text-slate-500">${escapeHtml(acs.name)}</span></th>`;
+            });
+            headerHTML += `<th class="py-2.5 px-3 text-center bg-rio-blue text-white">TOTAL EQUIPE</th></tr>`;
+            thead.innerHTML = headerHTML;
+
+            let bodyHTML = '';
+            CONDITIONS.forEach(c => {
+                let rowTotalReg = 0;
+                let rowTotalAcc = 0;
+
+                bodyHTML += `<tr class="hover:bg-slate-50 transition"><td class="py-2 px-3 font-semibold">${c.name}</td>`;
+
+                state.acsList.forEach(acs => {
+                    const reg = acs.data[c.id]?.registered || 0;
+                    const acc = acs.data[c.id]?.accompanied || 0;
+                    const pct = reg > 0 ? Math.round((acc / reg) * 100) : 0;
+                    rowTotalReg += reg;
+                    rowTotalAcc += acc;
+
+                    let badgeClass = 'bg-emerald-100 text-emerald-800';
+                    if (pct < 70) badgeClass = 'bg-rose-100 text-rose-800';
+                    else if (pct < 85) badgeClass = 'bg-amber-100 text-amber-800';
+
+                    bodyHTML += `
+                        <td class="py-2 px-2 text-center border-l border-slate-200">
+                            <span class="font-bold text-slate-800">${acc}/${reg}</span>
+                            <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${badgeClass}">${pct}%</span>
+                        </td>
+                    `;
+                });
+
+                const totalPct = rowTotalReg > 0 ? Math.round((rowTotalAcc / rowTotalReg) * 100) : 0;
+                bodyHTML += `
+                    <td class="py-2 px-2 text-center bg-blue-50 font-black text-rio-blue border-l border-slate-200">
+                        ${rowTotalAcc}/${rowTotalReg} (${totalPct}%)
+                    </td>
+                </tr>`;
+            });
+
+            tbody.innerHTML = bodyHTML;
+        }
+
+        function setupPhotoUploadListener() {
+            const input = document.getElementById('photoFileInput');
+            input.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file || !activePhotoTarget) return;
+
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const base64 = evt.target.result;
+                    if (activePhotoTarget.type === 'member') {
+                        const m = state.teamMembers.find(mem => mem.id === activePhotoTarget.id);
+                        if (m) m.photo = base64;
+                    } else if (activePhotoTarget.type === 'acs') {
+                        const a = state.acsList.find(ac => ac.id === activePhotoTarget.id);
+                        if (a) a.photo = base64;
+                    }
+                    saveState();
+                    renderAll();
+                    showToast("Foto atualizada!", "success");
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function triggerPhotoUpload(type, id) {
+            activePhotoTarget = { type, id };
+            document.getElementById('photoFileInput').click();
+        }
+
+        function initOrUpdateMap() {
+            const mapContainer = document.getElementById('leafletMap');
+            if (!mapContainer) return;
+
+            if (!leafletMap) {
+                // Initialize map centered in Rio
+                leafletMap = L.map('leafletMap').setView([-22.9519, -43.1857], 14);
+
+                // Google Streets Layer
+                const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: 'Google Maps'
+                });
+
+                // Google Satellite Layer
+                const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: 'Google Satellite'
+                });
+
+                // CARTO Voyager Layer
+                const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                    maxZoom: 19,
+                    attribution: 'CARTO / OpenStreetMap'
+                });
+
+                // Set default layer
+                googleStreets.addTo(leafletMap);
+
+                // Add Layer Control
+                L.control.layers({
+                    "Google Maps (Ruas)": googleStreets,
+                    "Google Maps (Satélite)": googleSat,
+                    "CARTO Clean": cartoVoyager
+                }).addTo(leafletMap);
+
+                // Map Click Listener to update ACS position
+                leafletMap.on('click', (e) => {
+                    if (state.selectedMapACSId) {
+                        const acs = state.acsList.find(a => a.id === state.selectedMapACSId);
+                        if (acs) {
+                            acs.lat = e.latlng.lat;
+                            acs.lng = e.latlng.lng;
+                            saveState();
+                            updateMapMarkers();
+                            showToast(`Posição da MA ${acs.microarea} atualizada no mapa!`, "success");
+                        }
+                    }
+                });
+            }
+
+            leafletMap.invalidateSize();
+            updateMapMarkers();
+            renderAddressListForSelectedACS();
+        }
+
+        function updateMapACSSelectOptions() {
+            const select = document.getElementById('mapACSSelect');
+            if (!select) return;
+            select.innerHTML = '';
+
+            state.acsList.forEach(acs => {
+                const opt = document.createElement('option');
+                opt.value = acs.id;
+                opt.innerText = `MA ${acs.microarea} - ${acs.name}`;
+                if (acs.id === state.selectedMapACSId) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+
+        function onMapACSSelect(acsId) {
+            state.selectedMapACSId = acsId;
+            const acs = state.acsList.find(a => a.id === acsId);
+            if (acs && leafletMap && acs.lat && acs.lng) {
+                leafletMap.panTo([acs.lat, acs.lng]);
+            }
+            renderAddressListForSelectedACS();
+        }
+
+        function updateMapMarkers() {
+            if (!leafletMap) return;
+
+            // Clear old markers
+            Object.values(mapMarkers).forEach(m => leafletMap.removeLayer(m));
+            Object.values(mapCircles).forEach(c => leafletMap.removeLayer(c));
+            mapMarkers = {};
+            mapCircles = {};
+
+            state.acsList.forEach((acs, index) => {
+                if (!acs.lat || !acs.lng) return;
+
+                const color = COLOR_PALETTE[index % COLOR_PALETTE.length];
+                
+                // Circle radius for coverage
+                const circle = L.circle([acs.lat, acs.lng], {
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.2,
+                    radius: 250
+                }).addTo(leafletMap);
+
+                // Custom DivIcon marker
+                const customIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `
+                        <div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 11px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);">
+                            ${acs.microarea}
+                        </div>
+                    `,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+
+                const marker = L.marker([acs.lat, acs.lng], { icon: customIcon }).addTo(leafletMap);
+
+                const popupContent = `
+                    <div class="p-1 font-sans text-xs">
+                        <span class="font-black text-rio-blue block">MA ${escapeHtml(acs.microarea)} — ${escapeHtml(acs.name)}</span>
+                        <p class="text-slate-600 mt-1">${escapeHtml(acs.territoryDesc || 'Sem descrição')}</p>
+                        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                            <span class="font-bold text-slate-800">${acs.totalFamilies} famílias</span>
+                            <a href="https://www.google.com/maps?q=${acs.lat},${acs.lng}" target="_blank" class="text-rio-blue font-bold hover:underline">Abrir no Google Maps</a>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupContent);
+                mapMarkers[acs.id] = marker;
+                mapCircles[acs.id] = circle;
+            });
+        }
+
+        function focusACSOnMap(acsId) {
+            state.selectedMapACSId = acsId;
+            switchView('map');
+            const acs = state.acsList.find(a => a.id === acsId);
+            if (acs && leafletMap && acs.lat && acs.lng) {
+                leafletMap.setView([acs.lat, acs.lng], 16);
+                if (mapMarkers[acsId]) mapMarkers[acsId].openPopup();
+            }
+        }
+
+        async function searchAddress() {
+            const query = document.getElementById('addressSearchInput').value.trim();
+            if (!query) return;
+
+            showToast("Buscando logradouro...", "info");
+
+            try {
+                // Photon Geocoder API (Free, CORS enabled, no API keys required)
+                const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query + ', Rio de Janeiro')}&limit=1`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+
+                if (data && data.features && data.features.length > 0) {
+                    const coords = data.features[0].geometry.coordinates;
+                    const lng = coords[0];
+                    const lat = coords[1];
+
+                    if (leafletMap) {
+                        leafletMap.setView([lat, lng], 17);
+                    }
+
+                    // Assign to currently selected ACS
+                    if (state.selectedMapACSId) {
+                        const acs = state.acsList.find(a => a.id === state.selectedMapACSId);
+                        if (acs) {
+                            acs.lat = lat;
+                            acs.lng = lng;
+                            if (!acs.addresses) acs.addresses = [];
+                            acs.addresses.push(query);
+                            saveState();
+                            updateMapMarkers();
+                            renderAddressListForSelectedACS();
+                            showToast(`Localização de "${query}" atribuída à MA ${acs.microarea}!`, "success");
+                        }
+                    }
+                } else {
+                    showToast("Endereço não encontrado. Tente detalhar o bairro.", "warning");
+                }
+            } catch (err) {
+                console.error("Erro na busca de endereço", err);
+                showToast("Erro de conexão ao buscar endereço.", "warning");
+            }
+        }
+
+        function jumpToRioNeighborhood(coordsStr) {
+            if (!coordsStr || !leafletMap) return;
+            const parts = coordsStr.split(',');
+            const lat = parseFloat(parts[0]);
+            const lng = parseFloat(parts[1]);
+            leafletMap.setView([lat, lng], 15);
+        }
+
+        function locateUser() {
+            if (navigator.geolocation && leafletMap) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    leafletMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
+                    showToast("Mapa centralizado na sua localização atual.", "info");
+                }, () => {
+                    showToast("Não foi possível obter sua localização.", "warning");
+                });
+            }
+        }
+
+        function renderAddressListForSelectedACS() {
+            const container = document.getElementById('acsAddressList');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const acs = state.acsList.find(a => a.id === state.selectedMapACSId);
+            if (!acs || !acs.addresses || acs.addresses.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic">Nenhuma rua cadastrada nesta microárea.</p>`;
+                return;
+            }
+
+            acs.addresses.forEach((addr, idx) => {
+                const item = document.createElement('div');
+                item.className = "bg-slate-100 p-2 rounded-lg flex items-center justify-between text-xs font-medium text-slate-700";
+                item.innerHTML = `
+                    <span class="truncate" title="${escapeHtml(addr)}"><i data-lucide="map-pin" class="w-3 h-3 text-rio-blue inline mr-1"></i>${escapeHtml(addr)}</span>
+                    <button onclick="removeAddressFromACS(${idx})" class="text-slate-400 hover:text-rose-600 transition" title="Excluir rua">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                `;
+                container.appendChild(item);
+            });
+
+            lucide.createIcons();
+        }
+
+        function addAddressToACS() {
+            const acs = state.acsList.find(a => a.id === state.selectedMapACSId);
+            if (!acs) return;
+
+            showModal(
+                "Adicionar Logradouro",
+                `
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Rua / Travessa / Alameda</label>
+                    <input type="text" id="newAddressName" placeholder="Ex: Rua São Clemente, nº 100 ao 300" class="w-full border border-slate-300 rounded-lg p-2 text-xs font-medium">
+                </div>
+                `,
+                [
+                    { label: "Cancelar", type: "secondary", action: closeModal },
+                    { 
+                        label: "Adicionar", 
+                        type: "primary", 
+                        action: () => {
+                            const val = document.getElementById('newAddressName').value.trim();
+                            if (val) {
+                                if (!acs.addresses) acs.addresses = [];
+                                acs.addresses.push(val);
+                                saveState();
+                                renderAddressListForSelectedACS();
+                                closeModal();
+                                showToast("Rua adicionada!", "success");
+                            }
+                        } 
+                    }
+                ]
+            );
+        }
+
+        function removeAddressFromACS(idx) {
+            const acs = state.acsList.find(a => a.id === state.selectedMapACSId);
+            if (acs && acs.addresses) {
+                acs.addresses.splice(idx, 1);
+                saveState();
+                renderAddressListForSelectedACS();
+                showToast("Logradouro removido.", "info");
+            }
+        }
+
+        function loadSampleData() {
+            state.unitName = "CF Zilda Arns";
+            state.teamName = "Equipe Carioca 1";
+
+            state.teamMembers = [
+                { id: 'm1', role: 'Médico', name: 'Dr. Lucas Ferreira', photo: null },
+                { id: 'm2', role: 'Enfermeiro', name: 'Enf. Juliana Costa', photo: null },
+                { id: 'm3', role: 'Técnico Enfermagem', name: 'Marcos Vinícius', photo: null },
+                { id: 'm4', role: 'Residente Saúde', name: 'Dra. Beatriz Lima', photo: null }
+            ];
+
+            const sampleValues = [
+                { fam: 180, peo: 540, cria1: [8,8], cria5: [24,22], gest: [6,6], gestAR: [1,1], diab: [32,28], hip: [65,58], idoso: [72,68] },
+                { fam: 210, peo: 620, cria1: [12,10], cria5: [30,25], gest: [9,8], gestAR: [2,2], diab: [41,35], hip: [82,70], idoso: [85,80] },
+                { fam: 195, peo: 580, cria1: [5,5], cria5: [18,18], gest: [4,4], gestAR: [0,0], diab: [28,26], hip: [59,55], idoso: [60,58] },
+                { fam: 220, peo: 670, cria1: [10,9], cria5: [35,30], gest: [7,6], gestAR: [1,1], diab: [45,40], hip: [90,82], idoso: [92,88] },
+                { fam: 175, peo: 510, cria1: [6,6], cria5: [20,19], gest: [5,5], gestAR: [1,1], diab: [30,29], hip: [61,59], idoso: [55,54] },
+                { fam: 205, peo: 600, cria1: [9,8], cria5: [28,24], gest: [8,7], gestAR: [2,1], diab: [38,32], hip: [78,68], idoso: [76,70] }
+            ];
+
+            state.acsList.forEach((acs, index) => {
+                const sample = sampleValues[index % sampleValues.length];
+                acs.totalFamilies = sample.fam;
+                acs.totalPeople = sample.peo;
+                
+                CONDITIONS.forEach(c => {
+                    if (sample[c.id]) {
+                        acs.data[c.id] = { registered: sample[c.id][0], accompanied: sample[c.id][1] };
+                    } else {
+                        acs.data[c.id] = { registered: 2, accompanied: 2 };
+                    }
+                });
+            });
+
+            saveState();
+            renderAll();
+            showToast("Dados demonstrativos carregados!", "success");
+        }
+
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `placar_aps_rio_${(state.teamName || 'equipe').replace(/\s+/g, '_')}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast("Arquivo de backup JSON exportado!", "success");
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported && imported.acsList) {
+                        state = imported;
+                        saveState();
+                        renderAll();
+                        showToast("Dados importados com sucesso!", "success");
+                    } else {
+                        showToast("Formato de arquivo JSON inválido.", "warning");
+                    }
+                } catch (err) {
+                    showToast("Erro ao ler o arquivo JSON.", "danger");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function confirmReset() {
+            showModal(
+                "Resetar Placar",
+                "Tem certeza que deseja limpar todos os dados preenchidos? Esta ação não pode ser desfeita.",
+                [
+                    { label: "Cancelar", type: "secondary", action: closeModal },
+                    { 
+                        label: "Sim, Limpar Tudo", 
+                        type: "danger", 
+                        action: () => {
+                            localStorage.removeItem('placar_aps_rio_state');
+                            state.unitName = '';
+                            state.teamName = '';
+                            initDefaultACSList(6);
+                            renderAll();
+                            closeModal();
+                            showToast("Placar resetado para o padrão.", "info");
+                        } 
+                    }
+                ]
+            );
+        }
+
+        function showModal(title, bodyHTML, buttons) {
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalBody').innerHTML = bodyHTML;
+            
+            const footer = document.getElementById('modalFooter');
+            footer.innerHTML = '';
+
+            buttons.forEach(btn => {
+                const buttonEl = document.createElement('button');
+                let bgClass = 'bg-rio-blue text-white hover:bg-rio-dark';
+                if (btn.type === 'secondary') bgClass = 'bg-slate-100 text-slate-700 hover:bg-slate-200';
+                if (btn.type === 'danger') bgClass = 'bg-rose-600 text-white hover:bg-rose-700';
+
+                buttonEl.className = `px-4 py-2 rounded-lg text-xs font-bold transition ${bgClass}`;
+                buttonEl.innerText = btn.label;
+                buttonEl.onclick = btn.action;
+                footer.appendChild(buttonEl);
+            });
+
+            document.getElementById('customModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('customModal').classList.add('hidden');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bgClass = 'bg-slate-800 text-white';
+            if (type === 'success') bgClass = 'bg-emerald-600 text-white';
+            if (type === 'warning') bgClass = 'bg-amber-600 text-white';
+            if (type === 'danger') bgClass = 'bg-rose-600 text-white';
+
+            toast.className = `px-4 py-3 rounded-xl shadow-lg text-xs font-bold flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto ${bgClass}`;
+            toast.innerHTML = `
+                <i data-lucide="info" class="w-4 h-4"></i>
+                <span>${escapeHtml(message)}</span>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
